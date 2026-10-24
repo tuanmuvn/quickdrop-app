@@ -1,211 +1,146 @@
-# Hướng dẫn triển khai QuickDrop v1.0 trên VPS
+# Hướng dẫn triển khai QuickDrop v1.0 trên VPS (Cổng 8055)
 ### (Docker + Docker Compose + Portainer CE + Nginx Proxy Manager + `npm_proxy_network`)
 
-Tài liệu này hướng dẫn chi tiết từng bước để triển khai **QuickDrop** lên máy chủ VPS đã cài đặt sẵn môi trường:
+Tài liệu này hướng dẫn chi tiết từng bước để triển khai **QuickDrop** hoạt động trên cổng **8055** lên VPS đã có sẵn môi trường:
 - **Docker Engine & Docker Compose**
-- **Portainer CE** (Giao diện quản lý container)
-- **Nginx Proxy Manager (NPM)** (Reverse proxy tự động cấp chứng chỉ SSL Let's Encrypt)
-- Docker Network: **`npm_proxy_network`** (Mạng cầu nối giữa NPM và các ứng dụng)
+- **Portainer CE** (Quản lý container)
+- **Nginx Proxy Manager (NPM)** (Reverse proxy + SSL Let's Encrypt)
+- Docker Network: **`npm_proxy_network`**
 
 ---
 
-## 🏗️ 1. Kiến trúc mô hình triển khai
+## 🏗️ 1. Kiến trúc mô hình mạng
 
 ```
-[ Người dùng Internet / Trình duyệt ]
-                │  (HTTPS - Cổng 443 + WSS WebSocket)
-                ▼
-        [ VPS Firewall ]
-                │
-                ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │  Nginx Proxy Manager Container (Port 80/443)                │
-   │  - Quản lý SSL Let's Encrypt miễn phí                      │
-   │  - Tự động chuyển hướng HTTP -> HTTPS                      │
-   │  - Hỗ trợ WebSocket Upgrade (ws: -> wss:)                   │
-   └──────────────┬──────────────────────────────────────────────┘
-                  │  (Mạng Docker: npm_proxy_network)
-                  ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │  QuickDrop Container (Tên container: quickdrop-app)         │
-   │  - Node.js 22 LTS + Express + Socket.IO                     │
-   │  - Cổng nội bộ: 3000 (Không cần mở cổng này ra ngoài VPS)   │
-   │  - Chỉ làm nhiệm vụ Signaling WebRTC                        │
-   │  - Lưu trữ RAM, 0% dung lượng đĩa ghi file                 │
-   └─────────────────────────────────────────────────────────────┘
-                  │
-                  ▼ (Sau khi bắt tay qua WebRTC)
+[ Trình duyệt Người Dùng ]
+           │  (HTTPS Cổng 443 + WSS WebSocket)
+           ▼
+   [ VPS Firewall ] (Chỉ cần mở cổng 80 & 443)
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Nginx Proxy Manager Container (Port 80/443)                │
+│  - Cấp SSL Let's Encrypt tự động                           │
+│  - Chuyển tiếp WebSocket (ws: -> wss:)                      │
+└──────────────┬──────────────────────────────────────────────┘
+               │  (Mạng nội bộ: npm_proxy_network)
+               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  QuickDrop Container (Tên container: quickdrop-app)         │
+│  - Cổng dịch vụ: 8055                                       │
+│  - Chỉ làm nhiệm vụ Signaling WebRTC                        │
+│  - Lưu trữ RAM in-memory, 0% đĩa lưu file                   │
+└─────────────────────────────────────────────────────────────┘
+               │
+               ▼ (Sau khi bắt tay qua WebRTC)
 [ Trình duyệt A ] ◄══════ WebRTC DataChannel ══════► [ Trình duyệt B ]
-             (Dữ liệu file truyền thẳng P2P, KHÔNG qua VPS)
+             (Truyền file trực tiếp P2P, KHÔNG qua VPS)
 ```
-
-> **Lợi ích bảo mật:** Container `quickdrop-app` chỉ giao tiếp qua mạng nội bộ `npm_proxy_network`. Bạn **không cần mở cổng 3000 trên Firewall VPS**, giúp ngăn chặn hoàn toàn việc quét cổng từ bên ngoài.
 
 ---
 
 ## 📌 2. Chuẩn bị trước khi cài đặt
 
 1. **Trỏ tên miền (DNS):**
-   - Đăng nhập nhà cung cấp tên miền (Cloudflare, Namecheap, v.v.).
    - Tạo bản ghi **A Record**:
-     - **Host / Name**: `drop` (hoặc `quickdrop`, `share`)
+     - **Host / Name**: `drop` (hoặc tên miền phụ bạn muốn)
      - **Value / IP Address**: `Địa chỉ IPv4 của VPS`
-     - Ví dụ: `drop.yourdomain.com` -> `123.45.67.89`
-2. **Xác nhận mạng `npm_proxy_network` đã tồn tại:**
-   - Kiểm tra bằng lệnh:
-     ```bash
-     docker network ls | grep npm_proxy_network
-     ```
-   - Nếu chưa có, tạo bằng lệnh:
-     ```bash
-     docker network create npm_proxy_network
-     ```
+     - Ví dụ: `drop.yourdomain.com` -> `IP_VPS`
+2. **Kiểm tra mạng `npm_proxy_network`:**
+   ```bash
+   docker network ls | grep npm_proxy_network
+   ```
+   *(Nếu chưa có, tạo lệnh: `docker network create npm_proxy_network`)*
 
 ---
 
-## 🚀 3. Cách 1: Cài đặt qua giao diện Portainer CE (Khuyên dùng)
+## 🚀 3. Cách 1: Triển khai từ GitHub vào Portainer CE (Khuyên dùng)
 
-Nếu bạn quản lý VPS thông qua giao diện Web của **Portainer CE**, thực hiện các bước sau:
+Đây là cách chuẩn nhất khi bạn đã đẩy mã nguồn lên GitHub:
 
-### Bước 3.1: Tạo Stack mới
+### Bước 3.1: Tạo Stack trong Portainer CE
 1. Đăng nhập vào **Portainer CE**.
-2. Chọn môi trường làm việc của bạn (thường là **local** hoặc **primary**).
-3. Ở menu bên trái, nhấp vào mục **Stacks** ➜ Nhấp nút **Add stack**.
-
-### Bước 3.2: Đặt tên và dán cấu hình Stack
-1. **Name**: `quickdrop`
-2. **Build method**: Chọn **Web editor**.
-3. Dán toàn bộ nội dung sau vào khung soạn thảo:
-
-```yaml
-version: '3.8'
-
-services:
-  quickdrop:
-    image: node:22-alpine
-    container_name: quickdrop-app
-    restart: unless-stopped
-    working_dir: /app
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - ROOM_TIMEOUT_MS=600000
-      - CHUNK_SIZE=65536
-      - RATE_LIMIT_MAX=100
-      - CORS_ORIGIN=*
-    # Kéo mã nguồn trực tiếp hoặc mount thư mục dự án
-    # Nếu build từ Git, xem phần build bên dưới
-    networks:
-      - npm_proxy_network
-    expose:
-      - "3000"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  npm_proxy_network:
-    external: true
-```
-
-> **Cách Build từ Git Repository trong Portainer:**  
-> Nếu bạn đã đưa QuickDrop lên GitHub/GitLab:
-> - Chọn mục **Repository** thay vì Web editor.
-> - **Repository URL**: `https://github.com/your-username/quickdrop.git`
-> - **Compose path**: `docker/docker-compose.npm.yml`
-> - Nhấp **Deploy the stack**.
+2. Chọn môi trường làm việc (**local** hoặc **primary**).
+3. Menu bên trái ➜ **Stacks** ➜ Nhấp **Add stack**.
+4. **Name**: `quickdrop`
+5. Chọn tab **Repository**:
+   - **Repository URL**: `https://github.com/<tai-khoan-cua-ban>/quickdrop.git`
+   - **Repository reference**: `refs/heads/main`
+   - **Compose path**: `docker-compose.npm.yml` *(hoặc `docker/docker-compose.npm.yml`)*
+6. Bật mục **Automatic updates** (chọn Polling hoặc Webhook) để tự động cập nhật mỗi khi push code mới.
+7. Nhấp **Deploy the stack**.
 
 ---
 
-## 💻 4. Cách 2: Cài đặt qua dòng lệnh SSH (Terminal)
+## 💻 4. Cách 2: Triển khai trực tiếp qua SSH Terminal trên VPS
 
-Nếu bạn thao tác qua SSH Terminal trên VPS:
+Nếu bạn thích thao tác bằng dòng lệnh trên VPS:
 
 ```bash
-# 1. Di chuyển vào thư mục chứa các ứng dụng Docker
-cd /home/docker  # hoặc thư mục tùy bạn chọn
+# 1. Di chuyển vào thư mục docker
+cd /home/docker  # hoặc thư mục tùy bạn
 
-# 2. Clone hoặc tải mã nguồn QuickDrop
-git clone https://github.com/your-username/quickdrop.git
+# 2. Clone mã nguồn
+git clone https://github.com/<tai-khoan-cua-ban>/quickdrop.git
 cd quickdrop
 
-# 3. Tạo file cấu hình môi trường .env (nếu cần tùy chỉnh)
+# 3. Tạo file môi trường từ template (đã đặt sẵn PORT=8055)
 cp .env.example .env
 
-# 4. Khởi chạy container với file cấu hình dành riêng cho Nginx Proxy Manager
-docker compose -f docker/docker-compose.npm.yml up -d --build
+# 4. Khởi chạy container trên mạng npm_proxy_network
+docker compose -f docker-compose.npm.yml up -d --build
 
-# 5. Kiểm tra trạng thái container
-docker ps | grep quickdrop-app
-
-# 6. Xem log chạy
+# 5. Kiểm tra log
 docker logs -f quickdrop-app
 ```
 
-Khi thấy dòng chữ:
+Khi thấy dòng log:
 ```
   🚀 QuickDrop v1.0 - In-Browser P2P File Transfer
-  • Server running at: http://localhost:3000
+  • Server running at: http://localhost:8055
 ```
-nghĩa là ứng dụng đã khởi chạy thành công trong mạng `npm_proxy_network`!
+nghĩa là ứng dụng đã chạy thành công trên cổng 8055!
 
 ---
 
-## 🌐 5. Cấu hình Nginx Proxy Manager (Cấp SSL & WebSocket)
+## 🌐 5. Cấu hình Nginx Proxy Manager (Cấp SSL & Port 8055)
 
-> ⚠️ **BẮT BUỘC:** WebRTC và Crypto API yêu cầu kết nối an toàn **HTTPS**. Không có HTTPS, trình duyệt sẽ chặn kết nối P2P.
+> ⚠️ **LƯU Ý:** Trình duyệt **bắt buộc phải có HTTPS** để cấp quyền chạy API WebRTC DataChannel.
 
-### Bước 5.1: Mở giao diện Nginx Proxy Manager
-- Truy cập vào trang quản trị NPM (thường là `http://IP_VPS:81`).
-- Vào menu **Hosts** ➜ Chọn **Proxy Hosts** ➜ Nhấp **Add Proxy Host**.
+### Bước 5.1: Thêm Proxy Host
+Vào Nginx Proxy Manager (cổng 81) ➜ **Hosts** ➜ **Proxy Hosts** ➜ **Add Proxy Host**:
 
-### Bước 5.2: Cấu hình Tab "Details"
-Điền chính xác các thông số sau:
-- **Domain Names**: Điền tên miền bạn đã trỏ (ví dụ: `drop.yourdomain.com`).
+#### Tab "Details":
+- **Domain Names**: `drop.yourdomain.com` *(tên miền của bạn)*
 - **Scheme**: `http`
-- **Forward Hostname / IP**: `quickdrop-app` *(Đây chính là tên container trong mạng `npm_proxy_network`)*
-- **Forward Port**: `3000`
-- ✅ **Cache Assets**: Bật (tùy chọn)
+- **Forward Hostname / IP**: `quickdrop-app` *(tên container trong Docker)*
+- **Forward Port**: `8055`
+- ✅ **Cache Assets**: Bật
 - ✅ **Block Common Exploits**: Bật
-- ✅ **Websockets Support**: **BẮT BUỘC BẬT!** *(Nếu tắt, Socket.IO không thể bắt tay kết nối)*
+- ✅ **Websockets Support**: **BẮT BUỘC BẬT!** *(Để Socket.IO bắt tay signaling)*
 
----
+#### Tab "SSL":
+- **SSL Certificate**: **Request a new SSL Certificate**
+- ✅ **Force SSL**: Bật
+- ✅ **HTTP/2 Support**: Bật
+- **Email**: Nhập email của bạn
+- ✅ **I Agree to the Let's Encrypt Terms of Service**: Tích chọn
 
-### Bước 5.3: Cấu hình Tab "SSL"
-Chuyển sang tab **SSL**:
-- **SSL Certificate**: Chọn **Request a new SSL Certificate**.
-- ✅ **Force SSL**: Bật (tự động chuyển hướng từ `http://` sang `https://`).
-- ✅ **HTTP/2 Support**: Bật (tăng tốc độ tải trang).
-- ✅ **HSTS Enabled**: Bật (tùy chọn).
-- **Email Address for Let's Encrypt**: Nhập email nhận thông báo hạn chứng chỉ của bạn.
-- ✅ **I Agree to the Let's Encrypt Terms of Service**: Tích chọn.
-
----
-
-### Bước 5.4: Cấu hình Tab "Advanced" (Tối ưu kết nối duy trì)
-Để đảm bảo các kết nối truyền file dung lượng lớn hoặc thời gian chờ không bị ngắt timeout bởi Nginx:
-Chuyển sang tab **Advanced**, dán đoạn cấu hình Nginx sau:
+#### Tab "Advanced" (Tối ưu kết nối không bị ngắt timeout):
+Dán đoạn cấu hình Nginx sau vào khung:
 
 ```nginx
-# Tối ưu kết nối thời gian thực WebSocket cho QuickDrop
+# Hỗ trợ WebSocket thời gian thực cho QuickDrop
 proxy_http_version 1.1;
 proxy_set_header Upgrade $http_upgrade;
 proxy_set_header Connection "upgrade";
 
-# Tăng thời gian chờ tránh ngắt kết nối khi đang truyền file lớn
+# Tăng timeout tránh ngắt kết nối khi đang truyền file lớn
 proxy_connect_timeout 86400s;
 proxy_send_timeout 86400s;
 proxy_read_timeout 86400s;
 
-# Vô hiệu hóa bộ đệm trung gian để dữ liệu truyền tức thì
+# Vô hiệu hóa buffering trung gian
 proxy_buffering off;
 ```
 
@@ -213,51 +148,21 @@ Nhấp **Save** để hoàn tất.
 
 ---
 
-## ✅ 6. Kiểm tra và sử dụng
-
-1. Mở trình duyệt trên máy tính: `https://drop.yourdomain.com`
-2. Kiểm tra biểu tượng ổ khóa SSL màu xanh đã được kích hoạt.
-3. Ở góc phải thanh tiêu đề: Hiển thị chấm xanh và dòng chữ **"Sẵn sàng kết nối"**.
-4. **Thử nghiệm truyền file:**
-   - Thiết bị 1 (Gửi): Nhấp **Tạo kết nối mới**, màn hình hiện mã 6 chữ số và mã QR.
-   - Thiết bị 2 (Nhận - ví dụ điện thoại): Mở camera quét mã QR ➜ Thiết bị tự động vào trang và nhập mã ➜ Nhấn kết nối.
-   - Khi hai bên hiện **"Đã kết nối WebRTC"**, chọn file và bắt đầu truyền!
-
----
-
-## 🔧 7. Xử lý sự cố thường gặp (Troubleshooting)
+## 🔍 6. Xử lý sự cố (Troubleshooting)
 
 ### 1. Lỗi `502 Bad Gateway`
-- **Nguyên nhân**: Nginx Proxy Manager không tìm thấy container `quickdrop-app`.
-- **Cách khắc phục**:
-  1. Kiểm tra xem container `quickdrop-app` đã gia nhập vào đúng mạng `npm_proxy_network` chưa:
-     ```bash
-     docker network inspect npm_proxy_network
-     ```
-     Trong danh sách `Containers`, phải nhìn thấy `quickdrop-app`.
-  2. Trong trường `Forward Hostname / IP` trên NPM, hãy nhập đúng `quickdrop-app` (hoặc `quickdrop`), không nhập `localhost` hay `127.0.0.1` vì mỗi container có localhost riêng.
-
-### 2. Trạng thái hiển thị "Mất kết nối tín hiệu" hoặc mã không sinh ra
-- **Nguyên nhân**: Chưa bật tính năng WebSocket trên Nginx Proxy Manager.
-- **Cách khắc phục**: Vào lại Proxy Host trong NPM ➜ Tab Details ➜ Gạt bật công tắc **Websockets Support** ➜ Nhấn Save.
-
-### 3. Hai thiết bị khác mạng (Wifi khác nhau hoặc 4G) không truyền được file
-- **Nguyên nhân**: Mạng di động 4G/5G hoặc mạng doanh nghiệp có firewall loại Symmetric NAT chặn kết nối STUN mặc định của Google.
-- **Cách khắc phục**: Bổ sung tài khoản TURN Server vào biến môi trường trong file `.env`:
+- Kiểm tra container `quickdrop-app` đã gia nhập mạng `npm_proxy_network` chưa:
   ```bash
-  TURN_SERVER_URL="turn:your-turn-server.com:3478"
-  TURN_USERNAME="your-username"
-  TURN_CREDENTIAL="your-password"
+  docker network inspect npm_proxy_network
   ```
+- Kiểm tra `Forward Port` trong Nginx Proxy Manager đã đặt đúng **`8055`** chưa.
 
----
+### 2. Trạng thái chấm đỏ / Không sinh được mã 6 số
+- Bạn quên chưa bật công tắc **Websockets Support** trong Nginx Proxy Manager. Vào lại tab Details và bật lên.
 
-## 🔄 8. Nâng cấp phiên bản mới
-
-Khi có bản cập nhật mới của QuickDrop:
+### 3. Kiểm tra trực tiếp container trên VPS
 ```bash
-cd /path/to/quickdrop
-git pull
-docker compose -f docker/docker-compose.npm.yml up -d --build
+# Test endpoint healthcheck nội bộ
+docker exec -it quickdrop-app wget -qO- http://localhost:8055/api/health
 ```
-Dịch vụ sẽ tự động build lại image mới và khởi động lại với downtime chỉ khoảng 2-3 giây mà không ảnh hưởng đến cấu hình SSL trên Nginx Proxy Manager.
+Kết quả trả về `{"status":"ok","app":"QuickDrop",...}` là container hoàn toàn bình thường.

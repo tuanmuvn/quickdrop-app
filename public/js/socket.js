@@ -11,25 +11,29 @@ export class SignalingClient {
     this.listeners = new Map();
   }
 
+  async waitForIoClient(timeoutMs = 5000) {
+    if (typeof window.io !== 'undefined') return window.io;
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (typeof window.io !== 'undefined') return window.io;
+    }
+    throw new Error('Thư viện Socket.IO client chưa sẵn sàng.');
+  }
+
   /**
    * Initializes Socket.IO connection
    */
-  connect() {
-    if (this.socket) return Promise.resolve(this.socket);
+  async connect() {
+    if (this.socket) return this.socket;
 
-    return new Promise((resolve, reject) => {
-      // Connect to same host & port
-      // io is loaded globally from /socket.io/socket.io.js
-      if (typeof window.io === 'undefined') {
-        const errMsg = 'Socket.IO client library not found.';
-        console.error(`%c[QuickDrop:Socket:ERR]%c ${errMsg}`, 'color:#EF4444;font-weight:bold', 'color:inherit');
-        return reject(new Error(errMsg));
-      }
+    await this.waitForIoClient();
 
+    return new Promise((resolve) => {
       this.socket = window.io({
         transports: ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: 15,
         reconnectionDelay: 1000,
       });
 

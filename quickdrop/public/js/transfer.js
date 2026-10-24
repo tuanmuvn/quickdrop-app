@@ -160,8 +160,17 @@ export class TransferEngine {
    * Handles raw DataChannel incoming data (either string metadata or ArrayBuffer chunk)
    * @param {string|ArrayBuffer} data
    */
-  handleIncomingData(data) {
+  async handleIncomingData(data) {
     if (this.isCanceled) return;
+
+    if (data instanceof Blob) {
+      try {
+        data = await data.arrayBuffer();
+      } catch (e) {
+        console.error('Error converting Blob to ArrayBuffer:', e);
+        return;
+      }
+    }
 
     if (typeof data === 'string') {
       try {

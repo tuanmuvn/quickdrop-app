@@ -7,8 +7,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  // Server port (default 3000)
-  port: parseInt(process.env.PORT || '3000', 10),
+  // Server port (default 8055 for production, overridable via PORT env var)
+  port: parseInt(process.env.PORT || '8055', 10),
 
   // Environment mode
   env: process.env.NODE_ENV || 'development',

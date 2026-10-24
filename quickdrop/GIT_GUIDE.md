@@ -132,7 +132,7 @@ Khi container `quickdrop-app` đã hiển thị trạng thái `Healthy` trong Po
    - **Domain Names**: `drop.yourdomain.com`
    - **Scheme**: `http`
    - **Forward Hostname / IP**: `quickdrop-app`
-   - **Forward Port**: `3000`
+   - **Forward Port**: `8055`
    - ✅ **Websockets Support** (BẮT BUỘC BẬT)
    - ✅ **Block Common Exploits**
 2. Tab **SSL**:

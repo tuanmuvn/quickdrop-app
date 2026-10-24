@@ -16,7 +16,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8055
 
 # Create non-root user for security
 RUN addgroup -S quickdrop && adduser -S quickdrop -G quickdrop
@@ -30,9 +30,9 @@ COPY --chown=quickdrop:quickdrop .env.example ./
 
 USER quickdrop
 
-EXPOSE 3000
+EXPOSE 8055
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8055/api/health || exit 1
 
 CMD ["node", "server/app.js"]

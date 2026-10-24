@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node server/app.js",
+    "dev": "PORT=3000 node server/app.js",
     "start": "node server/app.js",
     "build": "node -e \"console.log('QuickDrop build verified')\"",
-    "preview": "node server/app.js",
+    "preview": "PORT=3000 node server/app.js",
     "lint": "node -e \"console.log('Linting passed')\""
   },
   "dependencies": {

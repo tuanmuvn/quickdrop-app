@@ -29,6 +29,7 @@ export class WebRTCConnection {
     this.dataChannel = null;
 
     this.isInitiator = false;
+    this.candidateQueue = [];
   }
 
   /**
@@ -44,6 +45,7 @@ export class WebRTCConnection {
 
     console.log('%c[QuickDrop:WebRTC]%c Initializing RTCPeerConnection...', 'color:#10B981;font-weight:bold', 'color:inherit');
     this.peerConnection = new RTCPeerConnection(rtcConfig);
+    this.candidateQueue = [];
 
     // ICE Candidate generation
     this.peerConnection.onicecandidate = (event) => {
@@ -110,6 +112,8 @@ export class WebRTCConnection {
     this.initPeerConnection();
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(remoteOffer));
+    await this.flushIceCandidates();
+
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
 
@@ -123,18 +127,39 @@ export class WebRTCConnection {
   async handleAnswer(remoteAnswer) {
     if (!this.peerConnection) return;
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(remoteAnswer));
+    await this.flushIceCandidates();
   }
 
   /**
-   * Add incoming ICE candidate from signaling server
+   * Add incoming ICE candidate or queue it if remote description is pending
    * @param {RTCIceCandidateInit} candidate
    */
   async addIceCandidate(candidate) {
-    if (!this.peerConnection) return;
+    if (!candidate) return;
+    if (!this.peerConnection || !this.peerConnection.remoteDescription) {
+      this.candidateQueue.push(candidate);
+      return;
+    }
+
     try {
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (err) {
       console.warn('Error adding ICE candidate:', err);
+    }
+  }
+
+  /**
+   * Flushes queued ICE candidates after remote description is set
+   */
+  async flushIceCandidates() {
+    if (!this.peerConnection || !this.peerConnection.remoteDescription) return;
+    while (this.candidateQueue.length > 0) {
+      const candidate = this.candidateQueue.shift();
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('Error flushing queued ICE candidate:', err);
+      }
     }
   }
 
@@ -207,6 +232,8 @@ export class WebRTCConnection {
    * Close peer connection and channel
    */
   close() {
+    this.candidateQueue = [];
+
     if (this.dataChannel) {
       try {
         this.dataChannel.close();
