@@ -5,14 +5,10 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-COPY package.json ./
+# Install production dependencies using clean server package.json
+# This prevents ERESOLVE conflicts with development build tools
+COPY server/package.json ./package.json
 RUN npm install --omit=dev --ignore-scripts
-
-# Copy application source
-COPY server/ ./server/
-COPY public/ ./public/
-COPY .env.example ./
 
 # Production runner image
 FROM node:22-alpine AS runner
@@ -25,12 +21,12 @@ ENV PORT=3000
 # Create non-root user for security
 RUN addgroup -S quickdrop && adduser -S quickdrop -G quickdrop
 
-# Copy node_modules and app files from builder
+# Copy node_modules and app files
 COPY --from=builder --chown=quickdrop:quickdrop /app/node_modules ./node_modules
 COPY --from=builder --chown=quickdrop:quickdrop /app/package.json ./package.json
-COPY --from=builder --chown=quickdrop:quickdrop /app/server ./server
-COPY --from=builder --chown=quickdrop:quickdrop /app/public ./public
-COPY --from=builder --chown=quickdrop:quickdrop /app/.env.example ./.env.example
+COPY --chown=quickdrop:quickdrop server/ ./server/
+COPY --chown=quickdrop:quickdrop public/ ./public/
+COPY --chown=quickdrop:quickdrop .env.example ./
 
 USER quickdrop
 

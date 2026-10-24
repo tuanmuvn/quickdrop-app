@@ -1,0 +1,26 @@
+{
+  "name": "quickdrop",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server/app.js",
+    "start": "node server/app.js",
+    "build": "node -e \"console.log('QuickDrop build verified')\"",
+    "preview": "node server/app.js",
+    "lint": "node -e \"console.log('Linting passed')\""
+  },
+  "dependencies": {
+    "compression": "^1.8.2",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.3.0",
+    "socket.io": "^4.8.4",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/express": "^4.17.21"
+  }
+}

@@ -13,7 +13,7 @@
 5. [Tech Stack](#-tech-stack)
 6. [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
 7. [Cài đặt & Chạy trực tiếp (Local)](#-cài-đặt--chạy-trực-tiếp-local)
-8. [Triển khai với Docker & Docker Compose](#-triển-khai-với-docker--docker-compose)
+8. [Hướng dẫn đẩy code lên Git & Auto-Deploy Portainer](GIT_GUIDE.md) 🐙
 9. [Triển khai trên VPS (Portainer & Nginx Proxy Manager)](DEPLOY_VPS.md) ⚡
 10. [Cấu hình Production & Nginx Proxy Manager (HTTPS)](#-cấu-hình-production--nginx-proxy-manager-https)
 11. [Xử lý sự cố (Troubleshooting)](#-xử-lý-sự-cố-troubleshooting)

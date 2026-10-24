@@ -13,11 +13,12 @@
 5. [Tech Stack](#-tech-stack)
 6. [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
 7. [Cài đặt & Chạy trực tiếp (Local)](#-cài-đặt--chạy-trực-tiếp-local)
-8. [Triển khai với Docker & Docker Compose](#-triển-khai-với-docker--docker-compose)
-9. [Cấu hình Production & Nginx Proxy Manager (HTTPS)](#-cấu-hình-production--nginx-proxy-manager-https)
-10. [Xử lý sự cố (Troubleshooting)](#-xử-lý-sự-cố-troubleshooting)
-11. [Roadmap](#-roadmap)
-12. [Giấy phép](#-giấy-phép)
+8. [Hướng dẫn đẩy code lên Git & Auto-Deploy Portainer](GIT_GUIDE.md) 🐙
+9. [Triển khai trên VPS (Portainer & Nginx Proxy Manager)](DEPLOY_VPS.md) ⚡
+10. [Cấu hình Production & Nginx Proxy Manager (HTTPS)](#-cấu-hình-production--nginx-proxy-manager-https)
+11. [Xử lý sự cố (Troubleshooting)](#-xử-lý-sự-cố-troubleshooting)
+12. [Roadmap](#-roadmap)
+13. [Giấy phép](#-giấy-phép)
 
 ---
 
@@ -134,9 +135,13 @@ quickdrop/
 │       └── favicon.svg      # Logo biểu tượng QuickDrop
 ├── docker/
 │   ├── Dockerfile           # Dockerfile Node 22 Alpine tối ưu
-│   └── docker-compose.yml   # Docker Compose triển khai sản xuất
+│   ├── docker-compose.yml   # Docker Compose chuẩn
+│   └── docker-compose.npm.yml # Docker Compose cho Nginx Proxy Manager
 ├── .env.example             # Mẫu cấu hình môi trường
-└── README.md                # Tài liệu hướng dẫn chi tiết
+├── .gitignore               # Loại bỏ node_modules, .env
+├── README.md                # Tài liệu tổng quan
+├── DEPLOY_VPS.md            # Tài liệu triển khai VPS chi tiết
+└── GIT_GUIDE.md             # Hướng dẫn đẩy Git & Auto-Deploy Portainer
 ```
 
 ---
@@ -166,129 +171,6 @@ npm run dev
 ```
 
 Mở trình duyệt tại địa chỉ: `http://localhost:3000`
-
----
-
-## 🐳 Triển khai với Docker & Docker Compose
-
-### Cách 1: Sử dụng Docker Compose (Khuyên dùng)
-```bash
-# Khởi động dịch vụ ở chế độ background
-docker compose -f docker/docker-compose.yml up -d --build
-
-# Kiểm tra log ứng dụng
-docker compose -f docker/docker-compose.yml logs -f
-
-# Dừng dịch vụ
-docker compose -f docker/docker-compose.yml down
-```
-
-### Cách 2: Sử dụng Docker CLI thuần
-```bash
-# Build image
-docker build -t quickdrop:1.0 -f docker/Dockerfile .
-
-# Chạy container
-docker run -d \
-  --name quickdrop \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  quickdrop:1.0
-```
-
-Kiểm tra trạng thái container bằng endpoint healthcheck:
-```bash
-curl http://localhost:3000/api/health
-```
-
----
-
-## 🌐 Cấu hình Production & Nginx Proxy Manager (HTTPS)
-
-> ⚠️ **LƯU Ý QUAN TRỌNG:** Trình duyệt **bắt buộc phải có kết nối HTTPS (hoặc localhost)** để cấp quyền sử dụng các API bảo mật của WebRTC và Crypto. Khi triển khai ra ngoài internet, bạn cần cấu hình domain có chứng chỉ SSL.
-
-### 1. Cấu hình Nginx thuần (`/etc/nginx/conf.d/quickdrop.conf`)
-```nginx
-server {
-    listen 80;
-    server_name drop.yourdomain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name drop.yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/drop.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/drop.yourdomain.com/privkey.pem;
-
-    # Cấu hình proxy đến QuickDrop
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-
-        # WebSocket Upgrade bắt buộc cho Socket.IO
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Tăng timeout cho kết nối lâu dài
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-}
-```
-
-### 2. Cấu hình qua Nginx Proxy Manager (UI)
-1. Thêm **Proxy Host**:
-   - **Domain Names:** `drop.yourdomain.com`
-   - **Forward Hostname / IP:** `127.0.0.1` hoặc tên service container `quickdrop`
-   - **Forward Port:** `3000`
-2. Bật các tùy chọn:
-   - ✅ **Block Common Exploits**
-   - ✅ **Websockets Support** (Bắt buộc!)
-3. Tab **SSL**:
-   - Chọn **Request a new SSL Certificate** (Let's Encrypt)
-   - ✅ **Force SSL**
-   - ✅ **HTTP/2 Support**
-
----
-
-## 🔍 Xử lý sự cố (Troubleshooting)
-
-### 1. Không kết nối được WebRTC giữa 2 thiết bị khác mạng (Ví dụ: 4G sang Wifi công ty)
-- **Nguyên nhân:** Mạng công ty hoặc nhà mạng di động sử dụng Symmetric NAT chặn kết nối P2P trực tiếp qua STUN Google.
-- **Giải pháp:** Cấu hình thêm TURN server trong `.env`:
-  ```bash
-  TURN_SERVER_URL="turn:your-turn-server.com:3478"
-  TURN_USERNAME="user"
-  TURN_CREDENTIAL="password"
-  ```
-  *(Có thể sử dụng coturn mã nguồn mở hoặc dịch vụ như Xirsys / Cloudflare Calls).*
-
-### 2. Lỗi "WebSocket connection failed"
-- Kiểm tra xem reverse proxy của bạn đã cấu hình header `Upgrade $http_upgrade` và `Connection "upgrade"` chưa.
-- Kiểm tra Firewall trên máy chủ có mở port 80/443 (hoặc 3000) không.
-
-### 3. File quá lớn gây đơ trình duyệt?
-- QuickDrop đã giải quyết triệt để vấn đề này nhờ cơ chế **Backpressure** trong `transfer.js`. Khi `bufferedAmount > 512KB`, ứng dụng sẽ tạm dừng đọc chunk tiếp theo và chỉ đọc tiếp khi nhận sự kiện `bufferedamountlow`.
-
----
-
-## 🗺️ Roadmap
-
-- [x] WebRTC DataChannel 64KB chunking
-- [x] Giao diện Windows 11 Fluent Dark Mode
-- [x] Sinh QR Code tự động kết nối qua URL
-- [x] Hỗ trợ truyền nhiều file và cả folder
-- [x] Bộ đếm 10 phút tự hủy phòng trong RAM
-- [ ] Mã hóa đầu cuối bổ sung (End-to-End Encryption) bằng WebCrypto AES-GCM
-- [ ] Nén ZIP trực tiếp trên luồng gửi (Stream-based ZIP)
-- [ ] Truyền file 1-nhiều (Multicast P2P Room)
 
 ---
 
