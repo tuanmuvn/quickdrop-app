@@ -1,0 +1,27 @@
+services:
+  quickdrop:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: quickdrop-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ROOM_TIMEOUT_MS=600000
+      - CHUNK_SIZE=65536
+      - RATE_LIMIT_MAX=100
+      - CORS_ORIGIN=*
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

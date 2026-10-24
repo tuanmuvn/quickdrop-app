@@ -1,0 +1,6 @@
+{
+  "name": "QuickDrop",
+  "description": "In-browser peer-to-peer file transfer powered by WebRTC and Socket.IO. Fast, secure, and zero-storage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
